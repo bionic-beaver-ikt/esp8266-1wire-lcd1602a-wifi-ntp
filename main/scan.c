@@ -10,23 +10,28 @@
 /*
     This example shows how to scan for available set of APs.
 */
-#include <string.h>
-#include "freertos/FreeRTOS.h"
-//#include "semphr.h"
-#include "freertos/event_groups.h"
-#include "esp_wifi.h"
-#include "esp_log.h"
-#include "esp_event.h"
-#include "nvs_flash.h"
-#include "esp_netif.h"
 
+#include "stdlib.h"
+#include <time.h>
+#include "esp_system.h"
+#include "esp_log.h"
+#include "esp_netif.h"
+#include "esp_event.h"
+#include "nvs.h"
+#include "nvs_flash.h"
+#include "driver/gpio.h"
+#include "string.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/event_groups.h"
+#include "freertos/task.h"
+#include "esp_wifi.h"
 #include "lwip/err.h"
 #include "lwip/sockets.h"
 #include "lwip/sys.h"
-#include <lwip/netdb.h>
-
-#include <driver/gpio.h>
+#include "lwip/apps/sntp.h"
+#include "lwip/netdb.h"
 #include "esp_vfs_fat.h"
+
    //#include "sdmmc_cmd.h" //SDCARD!!!
 
 #define DEFAULT_SCAN_LIST_SIZE 20
@@ -73,7 +78,7 @@ static EventGroupHandle_t s_wifi_event_group;
 static const char *TAG = "scan";
 //static const char *TAG = "wifi station";
 static int s_retry_num = 0;
-char rx_buffer[12];
+char rx_buffer[64];
 int max1=0;
 int max2=0;
 int sign_max=0;
@@ -111,6 +116,86 @@ static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_
         s_retry_num = 0;
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
     }
+}
+
+static void initialize_sntp(void)
+{
+    ESP_LOGI(TAG, "Initializing SNTP");
+    sntp_setoperatingmode(SNTP_OPMODE_POLL);
+    sntp_setservername(0, "pool.ntp.org");
+    sntp_init();
+}
+
+static void obtain_time(void)
+{
+    initialize_sntp();
+
+    // wait for time to be set
+    time_t now = 0;
+    struct tm timeinfo = { 0 };
+    int retry = 0;
+    const int retry_count = 10;
+
+    while (timeinfo.tm_year < (2016 - 1900) && ++retry < retry_count) {
+        ESP_LOGI(TAG, "Waiting for system time to be set... (%d/%d)", retry, retry_count);
+        vTaskDelay(2000 / portTICK_PERIOD_MS);
+        time(&now);
+        localtime_r(&now, &timeinfo);
+    }
+}
+
+    time_t now;
+    struct tm timeinfo;
+
+static void sntp_example_task()
+{
+    //time_t now;
+    //struct tm timeinfo;
+    char strftime_buf[64];
+
+    time(&now);
+    localtime_r(&now, &timeinfo);
+	
+	ESP_LOGI(TAG, "timeinfo.tm_year = %d", timeinfo.tm_year);
+	
+    // Is time set? If not, tm_year will be (1970 - 1900).
+    if (timeinfo.tm_year < (2016 - 1900)) {
+        ESP_LOGI(TAG, "Time is not set yet. Connecting to WiFi and getting time over NTP.");
+        obtain_time();
+    }
+
+    setenv("TZ", "<+08>-8", 1);
+    tzset();
+	
+	time(&now);
+    localtime_r(&now, &timeinfo);
+
+    if (timeinfo.tm_year < (2016 - 1900)) ESP_LOGE(TAG, "The current date/time error");
+    else {
+        strftime(strftime_buf, sizeof(strftime_buf), "%c", &timeinfo);
+		if (timeinfo.tm_sec%10==0)
+			ESP_LOGW(TAG, "Date: %02d-%02d-%04d. Time: %02d:%02d:%02d", timeinfo.tm_mday, timeinfo.tm_mon+1, timeinfo.tm_year+1900, timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
+		else ESP_LOGI(TAG, "Date: %02d-%02d-%04d. Time: %02d:%02d:%02d", timeinfo.tm_mday, timeinfo.tm_mon+1, timeinfo.tm_year+1900, timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
+    //ESP_LOGI(TAG, "The current date/time in Irkutsk is: %s", strftime_buf);
+    }
+    /*while (1) {
+        // update 'now' variable with current time
+        time(&now);
+        localtime_r(&now, &timeinfo);
+
+        if (timeinfo.tm_year < (2016 - 1900)) {
+            ESP_LOGE(TAG, "The current date/time error");
+        } else {
+            strftime(strftime_buf, sizeof(strftime_buf), "%c", &timeinfo);
+			if (timeinfo.tm_sec%10==0)
+				ESP_LOGW(TAG, "Date: %02d-%02d-%04d. Time: %02d:%02d:%02d", timeinfo.tm_mday, timeinfo.tm_mon+1, timeinfo.tm_year+1900, timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
+			else ESP_LOGI(TAG, "Date: %02d-%02d-%04d. Time: %02d:%02d:%02d", timeinfo.tm_mday, timeinfo.tm_mon+1, timeinfo.tm_year+1900, timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
+            //ESP_LOGI(TAG, "The current date/time in Irkutsk is: %s", strftime_buf);
+        }
+
+        //ESP_LOGI(TAG, "Free heap size: %d\n", esp_get_free_heap_size());
+        vTaskDelay(1000 / portTICK_RATE_MS);
+    }*/
 }
 
 static void _us_delay(uint32_t time_us)
@@ -202,7 +287,6 @@ static void print_cipher_type(int pairwise_cipher, int group_cipher)
     }
 }
 
-/* Initialize Wi-Fi as sta and set scan method */
 static void wifi_scan(void)
 {
 	s_wifi_event_group = xEventGroupCreate();
@@ -210,15 +294,12 @@ static void wifi_scan(void)
 	//esp_netif_create_default_wifi_sta();
 	tcpip_adapter_init();
     ESP_ERROR_CHECK(esp_event_loop_create_default());
-
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-
     uint16_t number = DEFAULT_SCAN_LIST_SIZE;
     wifi_ap_record_t ap_info[DEFAULT_SCAN_LIST_SIZE];
     uint16_t ap_count = 0;
     memset(ap_info, 0, sizeof(ap_info));
-
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_start());
     esp_wifi_scan_start(NULL, true);
@@ -907,7 +988,35 @@ static void show_temp()
 			lcd_send(48+max2%100%10);*/
 			//char rx_buffer[12]={" "};
 			char temp[3];
-			if (sign==1) strcpy(rx_buffer, "+"); else strcpy(rx_buffer, "-");
+			char temp4[4];
+			char temp2[2];
+			time(&now);
+			localtime_r(&now, &timeinfo);
+			strcpy(rx_buffer, "Date: ");
+			itoa(timeinfo.tm_year+1900,temp4,10);
+			strcat(rx_buffer, temp4);
+			strcat(rx_buffer, "-");
+			if (timeinfo.tm_mon+1<10) strcat(rx_buffer, "0");
+			itoa(timeinfo.tm_mon+1,temp2,10);
+			strcat(rx_buffer, temp2);
+			strcat(rx_buffer, "-");
+			if (timeinfo.tm_mday<10) strcat(rx_buffer, "0");
+			itoa(timeinfo.tm_mday,temp2,10);
+			strcat(rx_buffer, temp4);
+			strcat(rx_buffer, ". Time: ");
+			if (timeinfo.tm_hour<10) strcat(rx_buffer, "0");
+			itoa(timeinfo.tm_hour,temp2,10);
+			strcat(rx_buffer, temp2);
+			strcat(rx_buffer, ":");
+			if (timeinfo.tm_min<10) strcat(rx_buffer, "0");
+			itoa(timeinfo.tm_min,temp2,10);
+			strcat(rx_buffer, temp2);
+			strcat(rx_buffer, ":");
+			if (timeinfo.tm_sec<10) strcat(rx_buffer, "0");
+			itoa(timeinfo.tm_sec,temp2,10);
+			strcat(rx_buffer, temp2);
+			strcat(rx_buffer, " Temp: ");
+			if (sign==1) strcat(rx_buffer, "+"); else strcat(rx_buffer, "-");
 			itoa(digit,temp,10); 
 			strcat(rx_buffer, temp);
 			strcat(rx_buffer, ".");
@@ -924,7 +1033,7 @@ static void do_send(const int sock)
 {
 	//int written=0;
 	int to_write=0;
-    int len=12;
+    int len=64;
 	//strcpy(rx_buffer, "test_test\n\r");
     //char rx_buffer[128];
 	//show_temp();
@@ -1049,15 +1158,19 @@ CLEAN_UP:
 
 void app_main(void)
 {
-    // Initialize NVS
-    esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+    //esp_err_t ret = nvs_flash_init();
+	//ESP_ERROR_CHECK(nvs_flash_init());
+    //ESP_ERROR_CHECK(esp_netif_init());
+    //ESP_ERROR_CHECK(esp_event_loop_create_default());
+	
+	
+    /*if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
         ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK( ret );
 	
-	/*esp_err_t ret2;
+	esp_err_t ret2;
     esp_vfs_fat_sdmmc_mount_config_t mount_config = {
 #ifdef CONFIG_EXAMPLE_FORMAT_IF_MOUNT_FAILED
         .format_if_mount_failed = true,
@@ -1114,6 +1227,9 @@ void app_main(void)
     //ESP_LOGI(TAG, "File written");*/
 
     wifi_scan();
+	sntp_example_task();
+	//xTaskCreate(sntp_example_task, "sntp_example_task", 2048, NULL, 10, NULL);
+	
 	lcd_intro();
 	//read_temp();
 	while(read_temp()==85) {};
@@ -1128,6 +1244,7 @@ void app_main(void)
 	if( xSemaphore == NULL ) ESP_LOGI(TAG, "Cannot create semaphore"); else ESP_LOGI(TAG, "Semaphore created"); 
 	
 	xTaskCreate(tcp_server_task, "tcp_server", 4096, (void*)AF_INET, 5, NULL);
+	
 	while(1)
 	{
 		show_temp();
