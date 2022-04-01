@@ -777,7 +777,7 @@ static void lcd_intro()
 	gpio_pad_select_gpio(25);
 	gpio_pad_select_gpio(33);
 	gpio_pad_select_gpio(32);*/
-	//gpio_set_direction(LED, GPIO_MODE_OUTPUT);
+	gpio_set_direction(LED, GPIO_MODE_OUTPUT);
 	gpio_set_direction(RS, GPIO_MODE_OUTPUT);
 	gpio_set_direction(E, GPIO_MODE_OUTPUT);
 	gpio_set_direction(D4, GPIO_MODE_OUTPUT);
@@ -786,7 +786,7 @@ static void lcd_intro()
 	gpio_set_direction(D7, GPIO_MODE_OUTPUT);
 	//gpio_set_direction(32, GPIO_MODE_OUTPUT);
 	
-	//gpio_set_level(LED, 0);
+	gpio_set_level(LED, 0);
 
 	lcd_init();
 	//ESP_LOGI(TAG, "init");
