@@ -751,22 +751,21 @@ int read_temp()
 	return digit;
 }
 
-static void adc_task()
+/*static void adc_task()
 {
     int x;
-    //uint16_t adc_data[100];
-	uint16_t adc_data;
+    uint16_t adc_data[100];
+	//uint16_t adc_data;
     if (ESP_OK == adc_read(&adc_data)) ESP_LOGI(TAG, "adc read: %d\r\n", adc_data);
 
-    /*ESP_LOGI(TAG, "adc read fast:\r\n");
+    ESP_LOGI(TAG, "adc read fast:\r\n");
     if (ESP_OK == adc_read_fast(adc_data, 100)) {
         for (x = 0; x < 100; x++) {
             printf("%d\n", adc_data[x]);
         }
-    }*/
-
+    }
         //vTaskDelay(1000 / portTICK_RATE_MS);
-}
+}*/
 
 static void lcd_intro()
 {
@@ -778,7 +777,7 @@ static void lcd_intro()
 	gpio_pad_select_gpio(25);
 	gpio_pad_select_gpio(33);
 	gpio_pad_select_gpio(32);*/
-	gpio_set_direction(LED, GPIO_MODE_OUTPUT);
+	//gpio_set_direction(LED, GPIO_MODE_OUTPUT);
 	gpio_set_direction(RS, GPIO_MODE_OUTPUT);
 	gpio_set_direction(E, GPIO_MODE_OUTPUT);
 	gpio_set_direction(D4, GPIO_MODE_OUTPUT);
@@ -787,7 +786,7 @@ static void lcd_intro()
 	gpio_set_direction(D7, GPIO_MODE_OUTPUT);
 	//gpio_set_direction(32, GPIO_MODE_OUTPUT);
 	
-	gpio_set_level(LED, 0);
+	//gpio_set_level(LED, 0);
 
 	lcd_init();
 	//ESP_LOGI(TAG, "init");
@@ -1020,8 +1019,8 @@ static void show_temp()
 			strcat(rx_buffer, "-");
 			if (timeinfo.tm_mday<10) strcat(rx_buffer, "0");
 			itoa(timeinfo.tm_mday,temp2,10);
-			strcat(rx_buffer, temp4);
-			strcat(rx_buffer, ". Time: ");
+			strcat(rx_buffer, temp2);
+			strcat(rx_buffer, " Time: ");
 			if (timeinfo.tm_hour<10) strcat(rx_buffer, "0");
 			itoa(timeinfo.tm_hour,temp2,10);
 			strcat(rx_buffer, temp2);
@@ -1040,8 +1039,19 @@ static void show_temp()
 			strcat(rx_buffer, ".");
 			itoa(dec1%10000/1000,temp,10);
 			strcat(rx_buffer, temp);
-			strcat(rx_buffer, "\n\r");
-			adc_task();
+			strcat(rx_buffer, "C");
+			uint16_t adc_data;
+			if (ESP_OK == adc_read(&adc_data))
+			{
+				//ESP_LOGI(TAG, "adc read: %d\r\n", adc_data);
+				itoa(adc_data,temp4,10);
+				strcat(rx_buffer, " Voltage: ");
+				strcat(rx_buffer, temp4);
+				strcat(rx_buffer, "mV");
+			}
+			//strcat(rx_buffer, "\n\r");
+			strcat(rx_buffer, "\r");
+			//adc_task();
 			//strcat(rx_buffer, "C");
 			xSemaphoreGive(xSemaphore);
 		}
