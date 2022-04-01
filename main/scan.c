@@ -24,6 +24,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "freertos/task.h"
+#include "driver/adc.h"
 #include "esp_wifi.h"
 #include "lwip/err.h"
 #include "lwip/sockets.h"
@@ -750,6 +751,23 @@ int read_temp()
 	return digit;
 }
 
+static void adc_task()
+{
+    int x;
+    //uint16_t adc_data[100];
+	uint16_t adc_data;
+    if (ESP_OK == adc_read(&adc_data)) ESP_LOGI(TAG, "adc read: %d\r\n", adc_data);
+
+    /*ESP_LOGI(TAG, "adc read fast:\r\n");
+    if (ESP_OK == adc_read_fast(adc_data, 100)) {
+        for (x = 0; x < 100; x++) {
+            printf("%d\n", adc_data[x]);
+        }
+    }*/
+
+        //vTaskDelay(1000 / portTICK_RATE_MS);
+}
+
 static void lcd_intro()
 {
 	//ESP_LOGI(TAG, "intro");
@@ -1023,6 +1041,7 @@ static void show_temp()
 			itoa(dec1%10000/1000,temp,10);
 			strcat(rx_buffer, temp);
 			strcat(rx_buffer, "\n\r");
+			adc_task();
 			//strcat(rx_buffer, "C");
 			xSemaphoreGive(xSemaphore);
 		}
@@ -1228,6 +1247,14 @@ void app_main(void)
 
     wifi_scan();
 	sntp_example_task();
+	
+	adc_config_t adc_config;
+
+    // Depend on menuconfig->Component config->PHY->vdd33_const value
+    // When measuring system voltage(ADC_READ_VDD_MODE), vdd33_const must be set to 255.
+    adc_config.mode = ADC_READ_TOUT_MODE;
+    adc_config.clk_div = 8; // ADC sample collection clock = 80MHz/clk_div = 10MHz
+    ESP_ERROR_CHECK(adc_init(&adc_config));
 	//xTaskCreate(sntp_example_task, "sntp_example_task", 2048, NULL, 10, NULL);
 	
 	lcd_intro();
