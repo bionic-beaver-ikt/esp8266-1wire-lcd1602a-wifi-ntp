@@ -1,16 +1,3 @@
-/* Scan Example
-
-   This example code is in the Public Domain (or CC0 licensed, at your option.)
-
-   Unless required by applicable law or agreed to in writing, this
-   software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
-   CONDITIONS OF ANY KIND, either express or implied.
-*/
-
-/*
-    This example shows how to scan for available set of APs.
-*/
-
 #include "stdlib.h"
 #include <time.h>
 #include "esp_system.h"
@@ -32,6 +19,7 @@
 #include "lwip/apps/sntp.h"
 #include "lwip/netdb.h"
 #include "esp_vfs_fat.h"
+#include "driver/hw_timer.h"
 
    //#include "sdmmc_cmd.h" //SDCARD!!!
 
@@ -59,6 +47,7 @@ static EventGroupHandle_t s_wifi_event_group;
 #define LED 2
 #define RS 11
 #define E 7
+//#define D4 9
 #define D4 9
 #define D5 10
 #define D6 8
@@ -79,7 +68,7 @@ static EventGroupHandle_t s_wifi_event_group;
 static const char *TAG = "scan";
 //static const char *TAG = "wifi station";
 static int s_retry_num = 0;
-char rx_buffer[64];
+char rx_buffer[128];
 int max1=0;
 int max2=0;
 int sign_max=0;
@@ -87,6 +76,8 @@ int min1=0;
 int min2=0;
 int sign_min=0;
 int sign=0;
+
+uint8_t last_temp = 0;
 
 uint8_t digit;
 uint8_t decimal;
@@ -96,10 +87,11 @@ uint8_t temperature[2];
 int written=0;
 int debug=0;
 
-SemaphoreHandle_t xSemaphore;
+//SemaphoreHandle_t xSemaphore;
 
 static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data)
 {
+	ESP_LOGI(TAG, "EVENT 1!!!");
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
         esp_wifi_connect();
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
@@ -152,13 +144,13 @@ static void sntp_example_task()
 {
     //time_t now;
     //struct tm timeinfo;
-    char strftime_buf[64];
+	char strftime_buf[64];
 
-    time(&now);
-    localtime_r(&now, &timeinfo);
-	
+	time(&now);
+	localtime_r(&now, &timeinfo);
+
 	ESP_LOGI(TAG, "timeinfo.tm_year = %d", timeinfo.tm_year);
-	
+
     // Is time set? If not, tm_year will be (1970 - 1900).
     if (timeinfo.tm_year < (2016 - 1900)) {
         ESP_LOGI(TAG, "Time is not set yet. Connecting to WiFi and getting time over NTP.");
@@ -167,7 +159,7 @@ static void sntp_example_task()
 
     setenv("TZ", "<+08>-8", 1);
     tzset();
-	
+
 	time(&now);
     localtime_r(&now, &timeinfo);
 
@@ -201,7 +193,8 @@ static void sntp_example_task()
 
 static void _us_delay(uint32_t time_us)
 {
-    ets_delay_us(time_us);
+    //ets_delay_us(time_us);
+        os_delay_us(time_us);
 }
 
 static void print_auth_mode(int authmode)
@@ -424,12 +417,12 @@ static void command (unsigned char data)
 	gpio_set_level(D5, 0);
 	gpio_set_level(D6, 0);
 	gpio_set_level(D7, 0);
-	
+
 	gpio_set_level(D7, (data&(1<<7))>>7);
 	gpio_set_level(D6, (data&(1<<6))>>6);
 	gpio_set_level(D5, (data&(1<<5))>>5);
 	gpio_set_level(D4, (data&(1<<4))>>4);
-	
+
 	gpio_set_level(E, 0);
 	_us_delay(150);
 	gpio_set_level(E, 1);
@@ -438,7 +431,7 @@ static void command (unsigned char data)
 	gpio_set_level(D5, 0);
 	gpio_set_level(D6, 0);
 	gpio_set_level(D7, 0);
-	
+
 	gpio_set_level(D7, (data&(1<<3))>>3);
 	gpio_set_level(D6, (data&(1<<2))>>2);
 	gpio_set_level(D5, (data&(1<<1))>>1);
@@ -456,12 +449,12 @@ static void lcd_send (unsigned char data)
 	gpio_set_level(D5, 0);
 	gpio_set_level(D6, 0);
 	gpio_set_level(D7, 0);
-	
+
 	gpio_set_level(D7, (data&(1<<7))>>7);
 	gpio_set_level(D6, (data&(1<<6))>>6);
 	gpio_set_level(D5, (data&(1<<5))>>5);
 	gpio_set_level(D4, (data&(1<<4))>>4);
-	
+
 	gpio_set_level(E, 0);
 	_us_delay(50);
 	gpio_set_level(E, 1);
@@ -470,7 +463,7 @@ static void lcd_send (unsigned char data)
 	gpio_set_level(D5, 0);
 	gpio_set_level(D6, 0);
 	gpio_set_level(D7, 0);
-	
+
 	gpio_set_level(D7, (data&(1<<3))>>3);
 	gpio_set_level(D6, (data&(1<<2))>>2);
 	gpio_set_level(D5, (data&(1<<1))>>1);
@@ -487,25 +480,25 @@ static void set_position (unsigned char stroka, unsigned char symb)
 static bool owb_status_reset()
 {
     gpio_set_direction(ONEW_GPIO, GPIO_MODE_OUTPUT);
-    _us_delay(0);
+    //_us_delay(0);
     gpio_set_level(ONEW_GPIO, 0);  // Drive DQ low
-    _us_delay(480);
+    _us_delay(500);
     gpio_set_direction(ONEW_GPIO, GPIO_MODE_INPUT); // Release the bus
     gpio_set_level(ONEW_GPIO, 1);  // Reset the output level for the next output
-    _us_delay(70);
+    _us_delay(60);
     int level1 = gpio_get_level(ONEW_GPIO);
-    _us_delay(410);   // Complete the reset sequence recovery
+    _us_delay(480);   // Complete the reset sequence recovery
     int level2 = gpio_get_level(ONEW_GPIO);
 	bool present = false;
     if ((level1 == 0) && (level2 == 1)) present = true;   // Sample for presence pulse from slave
-    //ESP_LOGI(TAG, "reset: level1 0x%x, level2 0x%x, present %d", level1, level2, present);
+    if (debug) ESP_LOGI(TAG, "reset: level1 0x%x, level2 0x%x, present %d", level1, level2, present);
     return present;
 }
 
 static void _write_bit(int bit)
 {
-    int delay1 = bit ? 6 : 60;
-    int delay2 = bit ? 64 : 10;
+    int delay1 = bit ? 1 : 62;
+    int delay2 = bit ? 60 : 10;
     gpio_set_direction(ONEW_GPIO, GPIO_MODE_OUTPUT);
     gpio_set_level(ONEW_GPIO, 0);  // Drive DQ low
     _us_delay(delay1);
@@ -518,13 +511,15 @@ static int _read_bit()
     int result = 0;
     gpio_set_direction(ONEW_GPIO, GPIO_MODE_OUTPUT);
     gpio_set_level(ONEW_GPIO, 0);  // Drive DQ low
-    _us_delay(6);
+    //_us_delay(1);
+    os_delay_us(2);
     gpio_set_direction(ONEW_GPIO, GPIO_MODE_INPUT); // Release the bus
     gpio_set_level(ONEW_GPIO, 1);  // Reset the output level for the next output
-    _us_delay(9);
+    _us_delay(14);
     int level = gpio_get_level(ONEW_GPIO);
-    _us_delay(55);   // Complete the timeslot and 10us recovery
+    _us_delay(45);   // Complete the timeslot and 10us recovery
     result = level & 0x01;
+    _us_delay(1);
     return result;
 }
 
@@ -678,77 +673,95 @@ int crc_code9_full(uint8_t a1, uint8_t a2, uint8_t a3, uint8_t a4, uint8_t a5, u
 	return reverse ( data[num_of_bytes-1]);
 }
 
-int read_temp()
+void read_temp()
 {
-//int sign =0;
-	gpio_set_level(12, 1);
-	uint8_t arr[8];
-	int crc_test=13;
-	while (crc_test!=0)
+	do	{
+	uint8_t buffer[5]={0};
+	int buffer2[5]={0};
+	for (int i=0; i<4; i++)
 	{
-		owb_status_reset();
-		_write_bits(0xCC);
-		_write_bits(0x44);
-		int cycle=0;
-		while(!_read_bit()) {cycle++;}
-		if (debug) ESP_LOGI(TAG, "Cycles: %u", cycle);
-		owb_status_reset();
-		_write_bits(0xCC);
-		_write_bits(0xBE);
-		arr[0] = _read_byte();
-		arr[1] = _read_byte();
-		arr[2] = _read_byte();
-		arr[3] = _read_byte();
-		arr[4] = _read_byte();
-		arr[5] = _read_byte();
-		arr[6] = _read_byte();
-		arr[7] = _read_byte();
-		arr[8] = _read_byte();
-		crc_test = crc_code9_full(arr[0],arr[1],arr[2],arr[3],arr[4],arr[5],arr[6],arr[7],arr[8]);
-		if (debug)
-		{
-			ESP_LOGI(TAG, "TEMP:");
-			ESP_LOGI(TAG, "0x%02x", arr[0]);
-			ESP_LOGI(TAG, "0x%02x", arr[1]);
-			ESP_LOGI(TAG, "0x%02x", arr[2]);
-			ESP_LOGI(TAG, "0x%02x", arr[3]);
-			ESP_LOGI(TAG, "0x%02x", arr[4]);
-			ESP_LOGI(TAG, "0x%02x", arr[5]);
-			ESP_LOGI(TAG, "0x%02x", arr[6]);
-			ESP_LOGI(TAG, "0x%02x", arr[7]);
-			ESP_LOGI(TAG, "0x%02x", arr[8]);
-			ESP_LOGI(TAG, "CRC: 0x%02x", crc_test);
-		}
-	}
-	//ESP_LOGI(TAG, "%u", decimal);
-	temperature[0]=arr[0];
-	//_read_bits (arr, 8);
-	//	ESP_LOGI(TAG, "%u", arr[0]);
-	temperature[1]=arr[1];
-	
-	digit=temperature[0]>>4;
-	digit|=(temperature[1]&0x7)<<4;
-	//digit=temperature[0]>>1;
-	decimal=temperature[0]&0xf;
-	//ESP_LOGI(TAG, "decimal %d", decimal);
-	//digit;
-	//ESP_LOGI(TAG, "dec1 %d", dec1);
-	dec1=decimal*625;
-	sign = 1;
-	//ESP_LOGI(TAG, "%u", digit);
-	
-	if (debug) ESP_LOGI(TAG, "%+d.%04u C", digit, dec1);
-	//ESP_LOGI(TAG, digit);
-	//ESP_LOGI(TAG, dec1);
-	if ((temperature[1]&0xF8) == 0xF8)
-	{
-		digit=127-digit;
-		dec1= (10000-dec1)%10000;
-		if (dec1==0) digit++;
-		sign = 0;
-	}
+		int crc_test = 13;
+		uint8_t arr[9];
+		do	{
+			while (!owb_status_reset()) {ESP_LOGI(TAG, "NO-1");}
+			_write_bits(0xCC);
+			_write_bits(0x44);
+			if (debug)
+			{
+				int cycle=0;
+				while(!_read_bit()) {cycle++;}
+				ESP_LOGI(TAG, "Cycles: %u", cycle);
+			}
+			else while(!_read_bit()) {};
+			while (!owb_status_reset()) {ESP_LOGI(TAG, "NO-2");}
+			_write_bits(0xCC);
+			_write_bits(0xBE);
+			for (int j=0; j<9; j++)
+			{
+				arr[j] = _read_byte();
+			}
+			crc_test = crc_code9_full(arr[0],arr[1],arr[2],arr[3],arr[4],arr[5],arr[6],arr[7],arr[8]);
+			if ((debug) & (crc_test!=0)) ESP_LOGI(TAG, "CRC Error!");
 
-	return digit;
+			if (crc_test!=0)
+			{
+                                ESP_LOGI(TAG, "0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x - 0x%02x", arr[0], arr[1], arr[2], arr[3], arr[4], arr[5], arr[6], arr[7], arr[8], crc_test);
+			}
+			if (debug)
+			{
+				ESP_LOGI(TAG, "TEMP:");
+				for (int k=0; k<9; k++)
+				{
+					ESP_LOGI(TAG, "0x%02x", arr[k]);
+				}
+				ESP_LOGI(TAG, "CRC: 0x%02x", crc_test);
+			}
+		}
+		//while (crc_test!=0);
+		while ((crc_test!=0)|(arr[2]!=0x4B)|(arr[3]!=0x46)|(arr[4]!=0x7F)|(arr[5]!=0xFF)|(arr[6]!=0x0C)|(arr[7]!=0x10));
+		temperature[0]=arr[0];
+		temperature[1]=arr[1];
+		digit=temperature[0]>>4;
+		digit|=(temperature[1]&0x7)<<4;
+		decimal=temperature[0]&0xf;
+		dec1=decimal*625;
+		sign = 1;
+
+		if (debug) ESP_LOGI(TAG, "%+d.%04u C", digit, dec1);
+		if ((temperature[1]&0xF8) == 0xF8)
+		{
+			digit=127-digit;
+			dec1= (10000-dec1)%10000;
+			if (dec1==0) digit++;
+			sign = 0;
+		}
+		buffer[i+1]= digit;
+		buffer2[i+1]= dec1;
+		//ESP_LOGI(TAG, "%+d.%04u C - (%d) %d", digit, dec1, i, buffer[i]);
+	}
+	if(((buffer[1]+buffer[2]+buffer[3]+buffer[4])/4 - buffer[1] < 5 ) & ((buffer[1]+buffer[2]+buffer[3]+buffer[4])/4 - buffer[1] > -5 ))
+	{
+		digit = buffer[1];
+		dec1 = buffer2[1];
+	}
+	else if(((buffer[1]+buffer[2]+buffer[3]+buffer[4])/4 - buffer[2] < 5 ) & ((buffer[1]+buffer[2]+buffer[3]+buffer[4])/4 - buffer[2] > -5 ))
+	{
+		digit = buffer[2];
+		dec1 = buffer2[2];
+	}
+	else if(((buffer[1]+buffer[2]+buffer[3]+buffer[4])/4 - buffer[3] < 5 ) & ((buffer[1]+buffer[2]+buffer[3]+buffer[4])/4 - buffer[3] > -5 ))
+	{
+		digit = buffer[3];
+		dec1 = buffer2[3];
+	}
+	else
+	{
+		digit = 85;
+		ESP_LOGI(TAG, " %d, %d, %d, %d = %d", buffer[1], buffer[2], buffer[3], buffer[4], (buffer[1]+buffer[2]+buffer[3]+buffer[4])/4);
+	}
+	}
+	while (digit == 85);
+	//ESP_LOGI(TAG, "%+d.%04u C", digit, dec1);
 }
 
 /*static void adc_task()
@@ -777,7 +790,7 @@ static void lcd_intro()
 	gpio_pad_select_gpio(25);
 	gpio_pad_select_gpio(33);
 	gpio_pad_select_gpio(32);*/
-	gpio_set_direction(LED, GPIO_MODE_OUTPUT);
+	//gpio_set_direction(LED, GPIO_MODE_OUTPUT);
 	gpio_set_direction(RS, GPIO_MODE_OUTPUT);
 	gpio_set_direction(E, GPIO_MODE_OUTPUT);
 	gpio_set_direction(D4, GPIO_MODE_OUTPUT);
@@ -785,8 +798,8 @@ static void lcd_intro()
 	gpio_set_direction(D6, GPIO_MODE_OUTPUT);
 	gpio_set_direction(D7, GPIO_MODE_OUTPUT);
 	//gpio_set_direction(32, GPIO_MODE_OUTPUT);
-	
-	gpio_set_level(LED, 0);
+
+	//gpio_set_level(LED, 0);
 
 	lcd_init();
 	//ESP_LOGI(TAG, "init");
@@ -818,7 +831,7 @@ static void lcd_intro()
 	lcd_send(0b00010101);
 	lcd_send(0b00001110);
 	lcd_send(0b00000100);
-	
+
 	lcd_send(0b00000110);
 	lcd_send(0b00001001);
 	lcd_send(0b00001001);
@@ -827,7 +840,7 @@ static void lcd_intro()
 	lcd_send(0b00000000);
 	lcd_send(0b00000000);
 	lcd_send(0b00000000);
-	
+
 	lcd_send(0b00001111);
 	lcd_send(0b00000111);
 	lcd_send(0b00000111);
@@ -836,7 +849,7 @@ static void lcd_intro()
 	lcd_send(0b00000001);
 	lcd_send(0b00000001);
 	lcd_send(0b00000000);
-	
+
 	lcd_send(0b00010001);
 	lcd_send(0b00001110);
 	lcd_send(0b00010001);
@@ -845,7 +858,7 @@ static void lcd_intro()
 	lcd_send(0b00001110);
 	lcd_send(0b00001010);
 	lcd_send(0b00011011);
-	
+
 	set_position(0,0);
 	lcd_send('W');_us_delay(50000);
 	lcd_send('a');_us_delay(50000);
@@ -862,8 +875,7 @@ static void lcd_intro()
 	lcd_send('!');_us_delay(50000);
 	lcd_send(' ');_us_delay(50000);
 	lcd_send(4);_us_delay(50000);
-	
-	
+
 	set_position(1,0);
 	lcd_send('Y');_us_delay(50000);
 	lcd_send('o');_us_delay(50000);
@@ -884,40 +896,28 @@ static void lcd_intro()
 }
 
 static void show_temp()
-{	
+{
 	uint8_t arr[8];
 	if (owb_status_reset() == true)
 	{
-		int crc_test=13;
+		/*int crc_test=13;
 		_write_bits(0x33);
-		arr[0] = _read_byte();
-		arr[1] = _read_byte();
-		arr[2] = _read_byte();
-		arr[3] = _read_byte();
-		arr[4] = _read_byte();
-		arr[5] = _read_byte();
-		arr[6] = _read_byte();
-		arr[7] = _read_byte();
+		for (int i=0; i<7; i++) arr[i] = _read_byte();
+
 		crc_test = crc_code9(arr[0],arr[1],arr[2],arr[3],arr[4],arr[5],arr[6],arr[7]);
 		if (debug)
 		{
 			ESP_LOGI(TAG, "ID:");
-			ESP_LOGI(TAG, "0x%02x", arr[0]);
-			ESP_LOGI(TAG, "0x%02x", arr[1]);
-			ESP_LOGI(TAG, "0x%02x", arr[2]);
-			ESP_LOGI(TAG, "0x%02x", arr[3]);
-			ESP_LOGI(TAG, "0x%02x", arr[4]);
-			ESP_LOGI(TAG, "0x%02x", arr[5]);
-			ESP_LOGI(TAG, "0x%02x", arr[6]);
-			ESP_LOGI(TAG, "0x%02x", arr[7]);
+			for (int j=0; j<7; j++) ESP_LOGI(TAG, "0x%02x", arr[j]);
 			ESP_LOGI(TAG, "ID CRC: 0x%02x", crc_test);
-		}
-			while(read_temp()==85) {}
-			if ((dec1%100/10)>5) dec1+=100;
+		} */
+			read_temp();
+		/*	if ((dec1%100/10)>5) dec1+=100;
 			if ((dec1%1000/100)>5) dec1+=1000;
+
 			if ((sign == 1)&(sign_min==1))
 			{
-				if (digit<min1)
+				if (digit<=min1)
 				{
 					min1=digit;
 					min2=dec1;
@@ -926,7 +926,7 @@ static void show_temp()
 			}
 			else if ((sign == 0)&(sign_min==0))
 			{
-				if (digit>min1)
+				if (digit>=min1)
 				{
 					min1=digit;
 					min2=dec1;
@@ -939,10 +939,10 @@ static void show_temp()
 				min1=digit;
 				min2=dec1;
 			}
-			
+
 			if ((sign == 1)&(sign_max==1))
 			{
-				if (digit>max1)
+				if (digit>=max1)
 				{
 					max1=digit;
 					max2=dec1;
@@ -951,7 +951,7 @@ static void show_temp()
 			}
 			else if ((sign == 0)&(sign_max==0))
 			{
-				if (digit<max1)
+				if (digit<=max1)
 				{
 					max1=digit;
 					max2=dec1;
@@ -964,8 +964,6 @@ static void show_temp()
 				max1=digit;
 				max2=dec1;
 			}
-			
-			
 			command(0b00000001);
 			_us_delay(200);
 			set_position(0,0);
@@ -976,9 +974,7 @@ static void show_temp()
 			lcd_send(48+dec1%10000/1000);
 			lcd_send(2);
 			lcd_send('C');
-			/*lcd_send(48+dec1%1000/100);
-			lcd_send(48+dec1%100/10);
-			lcd_send(48+dec1%100%10);*/
+
 			set_position(1,8);
 			lcd_send(1);
 			if (sign_min==1) lcd_send('+'); else lcd_send('-');
@@ -988,9 +984,6 @@ static void show_temp()
 			lcd_send(48+min2%10000/1000);
 			lcd_send(2);
 			lcd_send('C');
-			/*lcd_send(48+min2%1000/100);
-			lcd_send(48+min2%100/10);
-			lcd_send(48+min2%100%10);*/
 			set_position(0,8);
 			lcd_send(0);
 			if (sign_max==1) lcd_send('+'); else lcd_send('-');
@@ -1000,15 +993,13 @@ static void show_temp()
 			lcd_send(48+max2%10000/1000);
 			lcd_send(2);
 			lcd_send('C');
-			/*lcd_send(48+max2%1000/100);
-			lcd_send(48+max2%100/10);
-			lcd_send(48+max2%100%10);*/
-			//char rx_buffer[12]={" "};
+			//char rx_buffer[len]={" "};
 			char temp[3];
 			char temp4[4];
 			char temp2[2];
 			time(&now);
 			localtime_r(&now, &timeinfo);
+
 			strcpy(rx_buffer, "Date: ");
 			itoa(timeinfo.tm_year+1900,temp4,10);
 			strcat(rx_buffer, temp4);
@@ -1020,6 +1011,7 @@ static void show_temp()
 			if (timeinfo.tm_mday<10) strcat(rx_buffer, "0");
 			itoa(timeinfo.tm_mday,temp2,10);
 			strcat(rx_buffer, temp2);
+
 			strcat(rx_buffer, " Time: ");
 			if (timeinfo.tm_hour<10) strcat(rx_buffer, "0");
 			itoa(timeinfo.tm_hour,temp2,10);
@@ -1032,28 +1024,54 @@ static void show_temp()
 			if (timeinfo.tm_sec<10) strcat(rx_buffer, "0");
 			itoa(timeinfo.tm_sec,temp2,10);
 			strcat(rx_buffer, temp2);
+
 			strcat(rx_buffer, " Temp: ");
 			if (sign==1) strcat(rx_buffer, "+"); else strcat(rx_buffer, "-");
-			itoa(digit,temp,10); 
+			itoa(digit,temp,10);
+			if (digit<10) strcat(rx_buffer, "0");
 			strcat(rx_buffer, temp);
 			strcat(rx_buffer, ".");
 			itoa(dec1%10000/1000,temp,10);
 			strcat(rx_buffer, temp);
 			strcat(rx_buffer, "C");
-			uint16_t adc_data;
+
+			strcat(rx_buffer, " Min temp: ");
+			if (sign_min==1) strcat(rx_buffer, "+"); else strcat(rx_buffer, "-");
+			itoa(min1,temp,10);
+			if (min1<10) strcat(rx_buffer, "0");
+			strcat(rx_buffer, temp);
+			strcat(rx_buffer, ".");
+			itoa(min2%10000/1000,temp,10);
+			strcat(rx_buffer, temp);
+			strcat(rx_buffer, "C");
+
+			strcat(rx_buffer, " Max temp: ");
+			if (sign_max==1) strcat(rx_buffer, "+"); else strcat(rx_buffer, "-");
+			itoa(max1,temp,10);
+			if (max1<10) strcat(rx_buffer, "0");
+			strcat(rx_buffer, temp);
+			strcat(rx_buffer, ".");
+			itoa(max2%10000/1000,temp,10);
+			strcat(rx_buffer, temp);
+			strcat(rx_buffer, "C");*/
+
+/*			uint16_t adc_data;
 			if (ESP_OK == adc_read(&adc_data))
 			{
 				//ESP_LOGI(TAG, "adc read: %d\r\n", adc_data);
 				itoa(adc_data,temp4,10);
 				strcat(rx_buffer, " Voltage: ");
+				if (adc_data < 10) strcat(rx_buffer, "00");
+				else if (adc_data < 100) strcat(rx_buffer, "0");
+				if (adc_data >= 1000) itoa(adc_data%1000,temp4,10);
 				strcat(rx_buffer, temp4);
 				strcat(rx_buffer, "mV");
-			}
+			}*/
 			//strcat(rx_buffer, "\n\r");
-			strcat(rx_buffer, "\r");
+//			strcat(rx_buffer, "\r\0");
 			//adc_task();
 			//strcat(rx_buffer, "C");
-			xSemaphoreGive(xSemaphore);
+//			xSemaphoreGive(xSemaphore);
 		}
 		else ESP_LOGI(TAG, "no");
 }
@@ -1062,7 +1080,7 @@ static void do_send(const int sock)
 {
 	//int written=0;
 	int to_write=0;
-    int len=64;
+    int len=128;
 	//strcpy(rx_buffer, "test_test\n\r");
     //char rx_buffer[128];
 	//show_temp();
@@ -1074,7 +1092,6 @@ static void do_send(const int sock)
 
 static void tcp_server_task(void *pvParameters)
 {
-	
     char addr_str[128];
     int addr_family = (int)pvParameters;
     int ip_protocol = 0;
@@ -1082,123 +1099,104 @@ static void tcp_server_task(void *pvParameters)
     int keepIdle = KEEPALIVE_IDLE;
     int keepInterval = KEEPALIVE_INTERVAL;
     int keepCount = KEEPALIVE_COUNT;
-    struct sockaddr_storage dest_addr;
 
-    if (addr_family == AF_INET) {
-        struct sockaddr_in *dest_addr_ip4 = (struct sockaddr_in *)&dest_addr;
-        dest_addr_ip4->sin_addr.s_addr = htonl(INADDR_ANY);
-        dest_addr_ip4->sin_family = AF_INET;
-        dest_addr_ip4->sin_port = htons(PORT);
-        ip_protocol = IPPROTO_IP;
-    }
-#ifdef CONFIG_EXAMPLE_IPV6
-    else if (addr_family == AF_INET6) {
-        struct sockaddr_in6 *dest_addr_ip6 = (struct sockaddr_in6 *)&dest_addr;
-        bzero(&dest_addr_ip6->sin6_addr.un, sizeof(dest_addr_ip6->sin6_addr.un));
-        dest_addr_ip6->sin6_family = AF_INET6;
-        dest_addr_ip6->sin6_port = htons(PORT);
-        ip_protocol = IPPROTO_IPV6;
-    }
-#endif
+	while(1)
+	{
+		struct sockaddr_storage destAddr;
+		struct sockaddr_in *dest_addr_ip4 = (struct sockaddr_in *)&destAddr;
+		dest_addr_ip4->sin_addr.s_addr = htonl(INADDR_ANY);
+		dest_addr_ip4->sin_family = AF_INET;
+		dest_addr_ip4->sin_port = htons(PORT);
+		ip_protocol = IPPROTO_IP;
 
-    int listen_sock = socket(addr_family, SOCK_STREAM, ip_protocol);
-    if (listen_sock < 0) {
-        ESP_LOGE(TAG, "Unable to create socket: errno %d", errno);
-        vTaskDelete(NULL);
-        return;
-    }
-    int opt = 1;
-    setsockopt(listen_sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-#if defined(CONFIG_EXAMPLE_IPV4) && defined(CONFIG_EXAMPLE_IPV6)
-    // Note that by default IPV6 binds to both protocols, it is must be disabled
-    // if both protocols used at the same time (used in CI)
-    setsockopt(listen_sock, IPPROTO_IPV6, IPV6_V6ONLY, &opt, sizeof(opt));
-#endif
+		int sock =  socket(addr_family, SOCK_STREAM, ip_protocol);
+		if (sock < 0) {
+			ESP_LOGE(TAG, "Unable to create socket: errno %d", errno);
+			goto CLEAN_UP;
+		}
 
-    ESP_LOGI(TAG, "Socket created");
+		ESP_LOGI(TAG, "Socket created");
 
-    int err = bind(listen_sock, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
-    if (err != 0) {
-        ESP_LOGE(TAG, "Socket unable to bind: errno %d", errno);
-        ESP_LOGE(TAG, "IPPROTO: %d", addr_family);
-        goto CLEAN_UP;
-    }
-    ESP_LOGI(TAG, "Socket bound, port %d", PORT);
+		int err = bind(sock, (struct sockaddr *)&destAddr, sizeof(destAddr));
+		if (err != 0) {
+			ESP_LOGE(TAG, "Socket unable to bind: errno %d", errno);
+			ESP_LOGE(TAG, "IPPROTO: %d", addr_family);
+			close(sock);
+			goto CLEAN_UP;
+		}
+		ESP_LOGI(TAG, "Socket bound, port %d", PORT);
 
-    err = listen(listen_sock, 1);
-    if (err != 0) {
-        ESP_LOGE(TAG, "Error occurred during listen: errno %d", errno);
-        goto CLEAN_UP;
-    }
+		err = listen(sock, 1);
+		if (err != 0) {
+			ESP_LOGE(TAG, "Error occurred during listen: errno %d", errno);
+			close(sock);
+            goto CLEAN_UP;
+		}
+		ESP_LOGI(TAG, "Socket listening");
 
-    while (written>=0) {
+		struct sockaddr_storage source_addr; // Large enough for both IPv4 or IPv6
+		socklen_t addr_len = sizeof(source_addr);
+		int sock1 = accept(sock, (struct sockaddr *)&source_addr, &addr_len);
+		if (sock1 < 0) {
+			ESP_LOGE(TAG, "Unable to accept connection: errno %d", errno);
+			break;
+		}
 
-        ESP_LOGI(TAG, "Socket listening");
+		setsockopt(sock1, SOL_SOCKET, SO_KEEPALIVE, &keepAlive, sizeof(int));
+		setsockopt(sock1, IPPROTO_TCP, TCP_KEEPIDLE, &keepIdle, sizeof(int));
+		setsockopt(sock1, IPPROTO_TCP, TCP_KEEPINTVL, &keepInterval, sizeof(int));
+		setsockopt(sock1, IPPROTO_TCP, TCP_KEEPCNT, &keepCount, sizeof(int));
+		if (source_addr.ss_family == PF_INET) {
+			inet_ntoa_r(((struct sockaddr_in *)&source_addr)->sin_addr, addr_str, sizeof(addr_str) - 1);
+		}
+		ESP_LOGI(TAG, "Socket accepted ip address: %s", addr_str);
 
-        struct sockaddr_storage source_addr; // Large enough for both IPv4 or IPv6
-        socklen_t addr_len = sizeof(source_addr);
-        int sock = accept(listen_sock, (struct sockaddr *)&source_addr, &addr_len);
-        if (sock < 0) {
-            ESP_LOGE(TAG, "Unable to accept connection: errno %d", errno);
-            break;
-        }
-
-        // Set tcp keepalive option
-        setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, &keepAlive, sizeof(int));
-        setsockopt(sock, IPPROTO_TCP, TCP_KEEPIDLE, &keepIdle, sizeof(int));
-        setsockopt(sock, IPPROTO_TCP, TCP_KEEPINTVL, &keepInterval, sizeof(int));
-        setsockopt(sock, IPPROTO_TCP, TCP_KEEPCNT, &keepCount, sizeof(int));
-        // Convert ip address to string
-        if (source_addr.ss_family == PF_INET) {
-            inet_ntoa_r(((struct sockaddr_in *)&source_addr)->sin_addr, addr_str, sizeof(addr_str) - 1);
-        }
-#ifdef CONFIG_EXAMPLE_IPV6
-        else if (source_addr.ss_family == PF_INET6) {
-            inet6_ntoa_r(((struct sockaddr_in6 *)&source_addr)->sin6_addr, addr_str, sizeof(addr_str) - 1);
-        }
-#endif
-        ESP_LOGI(TAG, "Socket accepted ip address: %s", addr_str);
-
-        //do_retransmit(sock);
-		
-		do
+/*		do
 		{
 			xSemaphoreTake(xSemaphore, ( TickType_t ) 10000);
-			do_send(sock);
-			/*show_temp();
-			do_send(sock);
-			ESP_LOGI(TAG, "1");
-			vTaskDelay(500);*/
+			do_send(sock1);
+			ESP_LOGI(TAG, "xSemaphoreTake");
+			//show_temp();
+			//do_send(sock);
+			//ESP_LOGI(TAG, "1");
+			//vTaskDelay(500);
 			//_us_delay(5000000);
 		}
-		while (written>=0);
-		
-		ESP_LOGI(TAG, "After do_retransmit");
-        shutdown(sock, 0);
-		ESP_LOGI(TAG, "After shutdown");
-        close(sock);
-		ESP_LOGI(TAG, "After close");
-    }
+		while (written>=0);*/
 
-CLEAN_UP:
-    close(listen_sock);
+		ESP_LOGI(TAG, "After do_retransmit");
+		shutdown(sock, 0);
+		shutdown(sock1, 0);
+		ESP_LOGI(TAG, "After shutdown");
+		close(sock);
+		close(sock1);
+		ESP_LOGI(TAG, "After close");
+	}
+	CLEAN_UP:
     vTaskDelete(NULL);
 }
 
 void app_main(void)
 {
+        /*timer_config_t config;
+	config.divider = 80; // тактирование счетчика 1 мкс
+	config.counter_dir = TIMER_COUNT_UP; // прямой счет
+	config.counter_en = TIMER_START; // счетчик работает
+	config.alarm_en = TIMER_ALARM_DIS; // событие перезагрузка запрещено
+	config.auto_reload = TIMER_AUTORELOAD_DIS ; // аппаратная перезагрузка запрещена
+	timer_init(TIMER_GROUP_0, TIMER_0 , &config);*/
+
     //esp_err_t ret = nvs_flash_init();
 	//ESP_ERROR_CHECK(nvs_flash_init());
     //ESP_ERROR_CHECK(esp_netif_init());
     //ESP_ERROR_CHECK(esp_event_loop_create_default());
-	
-	
+
     /*if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
         ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK( ret );
-	
+
 	esp_err_t ret2;
     esp_vfs_fat_sdmmc_mount_config_t mount_config = {
 #ifdef CONFIG_EXAMPLE_FORMAT_IF_MOUNT_FAILED
@@ -1252,39 +1250,45 @@ void app_main(void)
     }
 	else ESP_LOGE(TAG, "File opened");
 	//fprintf(f, "SD-CARD: %s\n", card->cid.name);
-    
+
     //ESP_LOGI(TAG, "File written");*/
 
-    wifi_scan();
-	sntp_example_task();
-	
-	adc_config_t adc_config;
+wifi_scan();
+sntp_example_task();
+
+//	adc_config_t adc_config;
 
     // Depend on menuconfig->Component config->PHY->vdd33_const value
     // When measuring system voltage(ADC_READ_VDD_MODE), vdd33_const must be set to 255.
-    adc_config.mode = ADC_READ_TOUT_MODE;
-    adc_config.clk_div = 8; // ADC sample collection clock = 80MHz/clk_div = 10MHz
-    ESP_ERROR_CHECK(adc_init(&adc_config));
+//    adc_config.mode = ADC_READ_TOUT_MODE;
+//    adc_config.clk_div = 8; // ADC sample collection clock = 80MHz/clk_div = 10MHz
+//    ESP_ERROR_CHECK(adc_init(&adc_config));
 	//xTaskCreate(sntp_example_task, "sntp_example_task", 2048, NULL, 10, NULL);
-	
+
 	lcd_intro();
+	while (owb_status_reset() != true)
+	{
+	_us_delay(2000000);
+	}
 	//read_temp();
-	while(read_temp()==85) {};
+	read_temp();
 	sign_min=sign;
 	min1=digit;
 	min2=dec1;
 	sign_max=sign;
 	max1=digit;
 	max2=dec1;
-	
-	xSemaphore = xSemaphoreCreateBinary();
-	if( xSemaphore == NULL ) ESP_LOGI(TAG, "Cannot create semaphore"); else ESP_LOGI(TAG, "Semaphore created"); 
-	
-	xTaskCreate(tcp_server_task, "tcp_server", 4096, (void*)AF_INET, 5, NULL);
-	
+
+//	xSemaphore = xSemaphoreCreateBinary();
+//	if( xSemaphore == NULL ) ESP_LOGI(TAG, "Cannot create semaphore"); else ESP_LOGI(TAG, "Semaphore created"); 
+
+//	xTaskCreate(tcp_server_task, "tcp_server", 4096, (void*)AF_INET, 5, NULL);
+
 	while(1)
 	{
+//		if (!debug) ESP_LOGI(TAG, "before show_temp");
 		show_temp();
+//		if (!debug) ESP_LOGI(TAG, "after show_temp");
 		//fprintf(f, "Temp: %s\n", rx_buffer);
 		//fprintf(f, "%s;", rx_buffer);
 		vTaskDelay(100);
