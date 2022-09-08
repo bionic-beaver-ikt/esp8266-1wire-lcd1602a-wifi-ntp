@@ -1,3 +1,16 @@
+/* Scan Example
+
+   This example code is in the Public Domain (or CC0 licensed, at your option.)
+
+   Unless required by applicable law or agreed to in writing, this
+   software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+   CONDITIONS OF ANY KIND, either express or implied.
+*/
+
+/*
+    This example shows how to scan for available set of APs.
+*/
+
 #include "stdlib.h"
 #include <time.h>
 #include "esp_system.h"
@@ -87,7 +100,7 @@ uint8_t temperature[2];
 int written=0;
 int debug=0;
 
-//SemaphoreHandle_t xSemaphore;
+SemaphoreHandle_t xSemaphore;
 
 static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data)
 {
@@ -482,12 +495,12 @@ static bool owb_status_reset()
     gpio_set_direction(ONEW_GPIO, GPIO_MODE_OUTPUT);
     //_us_delay(0);
     gpio_set_level(ONEW_GPIO, 0);  // Drive DQ low
-    _us_delay(500);
+    _us_delay(480);
     gpio_set_direction(ONEW_GPIO, GPIO_MODE_INPUT); // Release the bus
     gpio_set_level(ONEW_GPIO, 1);  // Reset the output level for the next output
-    _us_delay(60);
+    _us_delay(70);
     int level1 = gpio_get_level(ONEW_GPIO);
-    _us_delay(480);   // Complete the reset sequence recovery
+    _us_delay(410);   // Complete the reset sequence recovery
     int level2 = gpio_get_level(ONEW_GPIO);
 	bool present = false;
     if ((level1 == 0) && (level2 == 1)) present = true;   // Sample for presence pulse from slave
@@ -497,8 +510,8 @@ static bool owb_status_reset()
 
 static void _write_bit(int bit)
 {
-    int delay1 = bit ? 1 : 62;
-    int delay2 = bit ? 60 : 10;
+    int delay1 = bit ? 6 : 60;
+    int delay2 = bit ? 64 : 10;
     gpio_set_direction(ONEW_GPIO, GPIO_MODE_OUTPUT);
     gpio_set_level(ONEW_GPIO, 0);  // Drive DQ low
     _us_delay(delay1);
@@ -512,14 +525,14 @@ static int _read_bit()
     gpio_set_direction(ONEW_GPIO, GPIO_MODE_OUTPUT);
     gpio_set_level(ONEW_GPIO, 0);  // Drive DQ low
     //_us_delay(1);
-    os_delay_us(2);
+    _us_delay(6);
     gpio_set_direction(ONEW_GPIO, GPIO_MODE_INPUT); // Release the bus
     gpio_set_level(ONEW_GPIO, 1);  // Reset the output level for the next output
-    _us_delay(14);
+    _us_delay(9);
     int level = gpio_get_level(ONEW_GPIO);
-    _us_delay(45);   // Complete the timeslot and 10us recovery
+    _us_delay(55);   // Complete the timeslot and 10us recovery
     result = level & 0x01;
-    _us_delay(1);
+    //_us_delay(1);
     return result;
 }
 
@@ -727,7 +740,7 @@ void read_temp()
 		dec1=decimal*625;
 		sign = 1;
 
-		if (debug) ESP_LOGI(TAG, "%+d.%04u C", digit, dec1);
+//		if (debug) ESP_LOGI(TAG, "%+d.%04u C", digit, dec1);
 		if ((temperature[1]&0xF8) == 0xF8)
 		{
 			digit=127-digit;
@@ -761,7 +774,7 @@ void read_temp()
 	}
 	}
 	while (digit == 85);
-	//ESP_LOGI(TAG, "%+d.%04u C", digit, dec1);
+	ESP_LOGI(TAG, "%+d.%04u C", digit, dec1);
 }
 
 /*static void adc_task()
@@ -897,10 +910,10 @@ static void lcd_intro()
 
 static void show_temp()
 {
-	uint8_t arr[8];
 	if (owb_status_reset() == true)
 	{
 		/*int crc_test=13;
+		uint8_t arr[8];
 		_write_bits(0x33);
 		for (int i=0; i<7; i++) arr[i] = _read_byte();
 
@@ -912,7 +925,7 @@ static void show_temp()
 			ESP_LOGI(TAG, "ID CRC: 0x%02x", crc_test);
 		} */
 			read_temp();
-		/*	if ((dec1%100/10)>5) dec1+=100;
+			if ((dec1%100/10)>5) dec1+=100;
 			if ((dec1%1000/100)>5) dec1+=1000;
 
 			if ((sign == 1)&(sign_min==1))
@@ -1053,9 +1066,9 @@ static void show_temp()
 			strcat(rx_buffer, ".");
 			itoa(max2%10000/1000,temp,10);
 			strcat(rx_buffer, temp);
-			strcat(rx_buffer, "C");*/
+			strcat(rx_buffer, "C");
 
-/*			uint16_t adc_data;
+			uint16_t adc_data;
 			if (ESP_OK == adc_read(&adc_data))
 			{
 				//ESP_LOGI(TAG, "adc read: %d\r\n", adc_data);
@@ -1066,12 +1079,12 @@ static void show_temp()
 				if (adc_data >= 1000) itoa(adc_data%1000,temp4,10);
 				strcat(rx_buffer, temp4);
 				strcat(rx_buffer, "mV");
-			}*/
+			}
 			//strcat(rx_buffer, "\n\r");
-//			strcat(rx_buffer, "\r\0");
-			//adc_task();
+			strcat(rx_buffer, "\r\0");
+//			adc_task();
 			//strcat(rx_buffer, "C");
-//			xSemaphoreGive(xSemaphore);
+			xSemaphoreGive(xSemaphore);
 		}
 		else ESP_LOGI(TAG, "no");
 }
@@ -1151,18 +1164,18 @@ static void tcp_server_task(void *pvParameters)
 		}
 		ESP_LOGI(TAG, "Socket accepted ip address: %s", addr_str);
 
-/*		do
+		do
 		{
 			xSemaphoreTake(xSemaphore, ( TickType_t ) 10000);
 			do_send(sock1);
-			ESP_LOGI(TAG, "xSemaphoreTake");
+//			ESP_LOGI(TAG, "xSemaphoreTake");
 			//show_temp();
 			//do_send(sock);
 			//ESP_LOGI(TAG, "1");
-			//vTaskDelay(500);
+//			vTaskDelay(500);
 			//_us_delay(5000000);
 		}
-		while (written>=0);*/
+		while (written>=0);
 
 		ESP_LOGI(TAG, "After do_retransmit");
 		shutdown(sock, 0);
@@ -1256,13 +1269,13 @@ void app_main(void)
 wifi_scan();
 sntp_example_task();
 
-//	adc_config_t adc_config;
+	adc_config_t adc_config;
 
     // Depend on menuconfig->Component config->PHY->vdd33_const value
     // When measuring system voltage(ADC_READ_VDD_MODE), vdd33_const must be set to 255.
-//    adc_config.mode = ADC_READ_TOUT_MODE;
-//    adc_config.clk_div = 8; // ADC sample collection clock = 80MHz/clk_div = 10MHz
-//    ESP_ERROR_CHECK(adc_init(&adc_config));
+    adc_config.mode = ADC_READ_TOUT_MODE;
+    adc_config.clk_div = 8; // ADC sample collection clock = 80MHz/clk_div = 10MHz
+    ESP_ERROR_CHECK(adc_init(&adc_config));
 	//xTaskCreate(sntp_example_task, "sntp_example_task", 2048, NULL, 10, NULL);
 
 	lcd_intro();
@@ -1279,10 +1292,10 @@ sntp_example_task();
 	max1=digit;
 	max2=dec1;
 
-//	xSemaphore = xSemaphoreCreateBinary();
-//	if( xSemaphore == NULL ) ESP_LOGI(TAG, "Cannot create semaphore"); else ESP_LOGI(TAG, "Semaphore created"); 
+	xSemaphore = xSemaphoreCreateBinary();
+	if( xSemaphore == NULL ) ESP_LOGI(TAG, "Cannot create semaphore"); else ESP_LOGI(TAG, "Semaphore created"); 
 
-//	xTaskCreate(tcp_server_task, "tcp_server", 4096, (void*)AF_INET, 5, NULL);
+	xTaskCreate(tcp_server_task, "tcp_server", 4096, (void*)AF_INET, 5, NULL);
 
 	while(1)
 	{
