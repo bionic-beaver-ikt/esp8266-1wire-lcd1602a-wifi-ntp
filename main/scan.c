@@ -718,7 +718,7 @@ void read_temp()
 
 			if (crc_test!=0)
 			{
-                                ESP_LOGI(TAG, "0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x - 0x%02x", arr[0], arr[1], arr[2], arr[3], arr[4], arr[5], arr[6], arr[7], arr[8], crc_test);
+                ESP_LOGI(TAG, "0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x - 0x%02x", arr[0], arr[1], arr[2], arr[3], arr[4], arr[5], arr[6], arr[7], arr[8], crc_test);
 			}
 			if (debug)
 			{
@@ -750,27 +750,31 @@ void read_temp()
 		}
 		buffer[i+1]= digit;
 		buffer2[i+1]= dec1;
+		if ((digit<2)|(digit>50)) ESP_LOGI(TAG, "%+d.%04u C 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x - 0x%02x", digit, dec1, arr[0], arr[1], arr[2], arr[3], arr[4], arr[5], arr[6], arr[7], arr[8], crc_test);
 		//ESP_LOGI(TAG, "%+d.%04u C - (%d) %d", digit, dec1, i, buffer[i]);
 	}
 	if(((buffer[1]+buffer[2]+buffer[3]+buffer[4])/4 - buffer[1] < 5 ) & ((buffer[1]+buffer[2]+buffer[3]+buffer[4])/4 - buffer[1] > -5 ))
 	{
 		digit = buffer[1];
 		dec1 = buffer2[1];
+		ESP_LOGI(TAG, "1: %d %d %d %d", buffer[1], buffer[2], buffer[3], buffer[4]);
 	}
 	else if(((buffer[1]+buffer[2]+buffer[3]+buffer[4])/4 - buffer[2] < 5 ) & ((buffer[1]+buffer[2]+buffer[3]+buffer[4])/4 - buffer[2] > -5 ))
 	{
 		digit = buffer[2];
 		dec1 = buffer2[2];
+		ESP_LOGI(TAG, "2: %d %d %d %d", buffer[1], buffer[2], buffer[3], buffer[4]);
 	}
 	else if(((buffer[1]+buffer[2]+buffer[3]+buffer[4])/4 - buffer[3] < 5 ) & ((buffer[1]+buffer[2]+buffer[3]+buffer[4])/4 - buffer[3] > -5 ))
 	{
 		digit = buffer[3];
 		dec1 = buffer2[3];
+		ESP_LOGI(TAG, "3: %d %d %d %d", buffer[1], buffer[2], buffer[3], buffer[4]);
 	}
 	else
 	{
 		digit = 85;
-		ESP_LOGI(TAG, " %d, %d, %d, %d = %d", buffer[1], buffer[2], buffer[3], buffer[4], (buffer[1]+buffer[2]+buffer[3]+buffer[4])/4);
+		ESP_LOGI(TAG, "4: %d, %d, %d, %d = %d", buffer[1], buffer[2], buffer[3], buffer[4], (buffer[1]+buffer[2]+buffer[3]+buffer[4])/4);
 	}
 	}
 	while (digit == 85);
